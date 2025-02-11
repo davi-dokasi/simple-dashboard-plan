@@ -2,14 +2,14 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-
+# Configuração da página
 st.set_page_config(
     page_title="Análise de Cancelamento de Cartões",
     page_icon="💳",
     layout="wide"
 )
 
-
+# Função para carregar dados
 @st.cache_data
 def load_data():
     df = pd.read_csv("dados/ClientesBanco.csv", encoding="latin1")
@@ -17,76 +17,106 @@ def load_data():
     df = df.dropna()
     return df
 
-
 df = load_data()
 
-
-st.sidebar.title("Configurações")
-st.sidebar.markdown("Filtros e personalizações")
-
-
-categoria_selecionada = st.sidebar.selectbox(
-    "Selecione a Categoria:",
-    options=["Todas"] + list(df['Categoria'].unique())
+# Sidebar com filtros
+st.sidebar.header("Filtros")
+categoria = st.sidebar.multiselect(
+    "Categoria:",
+    options=df["Categoria"].unique(),
+    default=df["Categoria"].unique()
 )
 
-if categoria_selecionada != "Todas":
-    df = df[df['Categoria'] == categoria_selecionada]
+faixa_salarial = st.sidebar.multiselect(
+    "Faixa Salarial:",
+    options=df["Faixa Salarial Anual"].unique(),
+    default=df["Faixa Salarial Anual"].unique()
+)
 
-# Título principal
-st.title("Análise de Cancelamento de Cartões de Crédito")
-st.markdown("**Objetivo:** Identificar padrões e motivos associados ao cancelamento")
+# Aplicar filtros
+df_filtered = df.query(
+    "Categoria == @categoria & `Faixa Salarial Anual` == @faixa_salarial"
+)
 
-tabs = st.tabs(["Visão Geral", "Distribuição", "Análise Detalhada", "Insights"])
+# Página principal
+st.title("🏦 Análise de Cancelamento de Cartões de Crédito")
+st.markdown("##")
 
-with tabs[0]:
-    st.header("📊 Visão Geral dos Dados")
-    col1, col2, col3 = st.columns(3)
+# Métricas principais
+total_clientes = len(df_filtered)
+taxa_cancelamento = round(len(df_filtered[df_filtered["Categoria"] == "Cancelado"]) / total_clientes, 2)
+idade_media = df_filtered["Idade"].mean().round(1)
+limite_medio = df_filtered["Limite"].mean().round(2)
+
+left, middle, right = st.columns(3)
+with left:
+    st.subheader("Total de Clientes:")
+    st.subheader(f"{total_clientes:,}")
+with middle:
+    st.subheader("Taxa de Cancelamento:")
+    st.subheader(f"{taxa_cancelamento}%")
+with right:
+    st.subheader("Idade Média:")
+    st.subheader(f"{idade_media} anos")
+
+st.markdown("---")
+
+# Gráficos
+tab1, tab2, tab3 = st.tabs(["Distribuição Geral", "Comparativo Cancelados vs Ativos", "Análise Financeira"])
+
+with tab1:
+    st.header("Distribuição Demográfica")
+    col1, col2 = st.columns(2)
+    
     with col1:
-        st.metric("Total de Clientes", df.shape[0])
+        fig = px.pie(df, names="Categoria", title="Proporção de Clientes vs Cancelados")
+        st.plotly_chart(fig, use_container_width=True)
+        
     with col2:
-        cancelamentos = df[df['Categoria'] == 'Cancelado'].shape[0]
-        st.metric("Clientes Cancelados", cancelamentos)
-    with col3:
-        st.metric("Taxa de Cancelamento", f"{cancelamentos/df.shape[0]*100:.2f}%")
-    st.subheader("Primeiras linhas dos dados")
-    st.dataframe(df.head(), use_container_width=True)
+        fig = px.histogram(df, x="Idade", nbins=20, title="Distribuição por Idade")
+        st.plotly_chart(fig, use_container_width=True)
 
-with tabs[1]:
-    st.header("🔍 Análise de Distribuição")
-    coluna_selecionada = st.selectbox(
+with tab2:
+    st.header("Comparativo entre Categorias")
+    selected_column = st.selectbox(
         "Selecione a variável para análise:",
-        df.columns.drop('Categoria')
+        options=["Educação", "Estado Civil", "Categoria Cartão", "Sexo"]
     )
+    
     fig = px.histogram(
-        df, 
-        x=coluna_selecionada, 
+        df_filtered,
+        x=selected_column,
         color="Categoria",
-        barmode='overlay', 
-        nbins=50,
-        title=f"Distribuição de {coluna_selecionada} por Categoria"
+        barmode="group",
+        title=f"Distribuição de {selected_column} por Categoria"
     )
     st.plotly_chart(fig, use_container_width=True)
 
-with tabs[2]:
-    st.header("📈 Análise Detalhada por Categoria")
-    with st.expander("Ver estatísticas descritivas"):
-        st.subheader("Estatísticas Descritivas")
-        st.write(df.groupby('Categoria').describe().round(1).T)
-    st.subheader("Análise Completa de Todas as Variáveis")
-    for col in df.columns.drop('Categoria'):
-        fig = px.histogram(df, x=col, color="Categoria", title=f"Distribuição de {col}")
+with tab3:
+    st.header("Análise Financeira")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        fig = px.scatter(
+            df_filtered,
+            x="Limite",
+            y="Valor Transacoes 12m",
+            color="Categoria",
+            title="Limite vs Valor das Transações"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+    with col2:
+        fig = px.box(
+            df_filtered,
+            x="Categoria",
+            y="Taxa de Utilização Cartão",
+            title="Taxa de Utilização do Cartão"
+        )
         st.plotly_chart(fig, use_container_width=True)
 
-with tabs[3]:
-    st.header("💡 Principais Insights")
-    st.markdown("""
-    1. **Padrão de Idade:** Clientes cancelados tendem a ser mais jovens
-    2. **Utilização do Cartão:** Taxas de utilização mais altas estão associadas a menor cancelamento
-    3. **Interações:** Clientes com menos contatos no último ano têm maior taxa de cancelamento
-    4. **Produtos Contratados:** Clientes com menos produtos tendem a cancelar mais
-    """)
-
-# Rodapé
+# Mostrar dados brutos
 st.markdown("---")
-st.markdown("**Desenvolvido por:** [Seu Nome] | Dados: Kaggle Credit Card Customers")
+st.header("Dados Brutos")
+st.dataframe(df_filtered, use_container_width=True)
+st.markdown("**Desenvolvido por:** Davi Augusto Farinela da Silva | Dados: Kaggle Credit Card Customers")
